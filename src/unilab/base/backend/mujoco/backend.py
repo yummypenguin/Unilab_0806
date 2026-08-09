@@ -370,6 +370,7 @@ class MuJoCoBackend(SimBackend):
         self._n_threads = min(num_envs, cpu_count() * 2)
 
         self._model_variants: tuple[mujoco.MjModel, ...] = (self._model,)
+        self._model_variant_specs: tuple[ModelVariantSpec, ...] = (ModelVariantSpec(),)
         self._model_assignments = np.zeros((num_envs,), dtype=np.int32)
         self._pool: BatchEnvPool | None = None
 
@@ -1204,6 +1205,7 @@ class MuJoCoBackend(SimBackend):
         model_assignments = np.asarray(plan.model_assignments, dtype=np.int32)
         model_variants = self._compile_model_variants(plan.model_variants)
         self._apply_model_assignments(model_variants, model_assignments)
+        self._model_variant_specs = tuple(plan.model_variants)
 
     def materialize(self) -> None:
         if self._pool is not None:
@@ -1508,6 +1510,19 @@ class MuJoCoBackend(SimBackend):
         if idx < 0 or idx >= self._num_envs:
             raise IndexError(f"env_index must be in [0, {self._num_envs - 1}], got {idx}")
         return self._model_variants[int(self._model_assignments[idx])]
+
+    def get_playback_model_variant_spec(
+        self, env_index: int | None = None
+    ) -> ModelVariantSpec | None:
+        """Return visual metadata for the model variant assigned to an env."""
+        if env_index is None:
+            variant_idx = int(self._model_assignments[0])
+        else:
+            idx = int(env_index)
+            if idx < 0 or idx >= self._num_envs:
+                raise IndexError(f"env_index must be in [0, {self._num_envs - 1}], got {idx}")
+            variant_idx = int(self._model_assignments[idx])
+        return self._model_variant_specs[variant_idx]
 
     def _coerce_reset_field(
         self,

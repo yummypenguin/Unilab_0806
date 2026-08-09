@@ -38,7 +38,7 @@ LEAP_TACTILE_FORCE_SENSOR_NAMES: tuple[str, ...] = (
 )
 
 # Authoritative 23D seed used by LeapInhandBallGraspAllegro to generate
-# ball_grasp_allegro_new_physics_0731_50k.npy. Keep the reward pose and object
+# ball_grasp_hora_sharpa_style_50k.npy. Keep the reward pose and object
 # anchor tied to the same cache-generation nominal setup.
 _CACHE_GENERATION_NOMINAL_BALL_POSE: tuple[float, ...] = (
     -0.032440416893199604,
@@ -61,8 +61,8 @@ class LeapInhandBall0730HoraAppoRotationCfg(SharpaInhandRotationCfg):
             model_file=str(ASSETS_ROOT_PATH / "robots" / "leap_hand" / "scene_ball.xml")
         )
     )
-    sim_dt: float = 1.0 / 240.0
-    ctrl_dt: float = 12.0 / 240.0
+    sim_dt: float = 0.005
+    ctrl_dt: float = 0.05
     max_episode_seconds: float = 20.0
 
     action_space: int = 16
@@ -77,6 +77,7 @@ class LeapInhandBall0730HoraAppoRotationCfg(SharpaInhandRotationCfg):
     base_name: str = "palm_lower"
     object_body_name: str = "leap_object"
     object_geom_name: str = "leap_object_col"
+    object_visual_mesh_name: str | None = "leap_ball_visual_mesh"
     actuated_joint_names: list[str] = field(default_factory=lambda: list(MENAGERIE_SIM_JOINT_NAMES))
     fingertip_body_names: list[str] = field(
         default_factory=lambda: [
@@ -121,28 +122,27 @@ class LeapInhandBall0730HoraAppoRotationCfg(SharpaInhandRotationCfg):
     control_config: SharpaControlConfig = field(
         default_factory=lambda: SharpaControlConfig(
             action_scale=1.0 / 24.0,
-            p_gain=1.0,
-            d_gain=0.1,
+            p_gain=3.0,
+            d_gain=0.01,
             torque_control=False,
-            dof_limits_scale=0.9,
+            dof_limits_scale=1.0,
         )
     )
     domain_rand: SharpaDomainRandConfig = field(
         default_factory=lambda: SharpaDomainRandConfig(
-            scale_list=[0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
+            scale_list=[0.8, 1.0, 1.2],
             randomize_gravity_direction=True,
             gravity_direction_magnitude=9.81,
+            gravity_direction_tilt_max_deg=3.0,
             randomize_pd_gains=True,
-            randomize_p_gain_scale_lower=0.5,
-            randomize_p_gain_scale_upper=2.0,
-            randomize_d_gain_scale_lower=0.5,
-            randomize_d_gain_scale_upper=2.0,
+            randomize_p_gain_scale_lower=2.9 / 3.0,
+            randomize_p_gain_scale_upper=3.1 / 3.0,
+            randomize_d_gain_scale_lower=0.9,
+            randomize_d_gain_scale_upper=1.1,
             randomize_friction=True,
-            randomize_friction_scale_lower=0.75,
-            randomize_friction_scale_upper=1.25,
-            elastomer_base_friction=2.0,
-            metal_base_friction=1.0,
-            object_base_friction=2.0,
+            randomize_friction_scale_lower=0.3,
+            randomize_friction_scale_upper=3.0,
+            scale_xml_friction_per_geom=True,
             randomize_com=True,
             randomize_com_lower=-0.01,
             randomize_com_upper=0.01,
@@ -153,7 +153,7 @@ class LeapInhandBall0730HoraAppoRotationCfg(SharpaInhandRotationCfg):
             random_force_prob_scalar=0.25,
             force_decay=0.9,
             force_decay_interval=0.08,
-            joint_noise_scale=0.02,
+            joint_noise_scale=0.0,
             contact_latency=0.005,
             contact_sensor_noise=0.01,
         )
@@ -165,7 +165,7 @@ class LeapInhandBall0730HoraAppoRotationCfg(SharpaInhandRotationCfg):
     # on each sampled cache row. A 0.06 m width therefore means +/-30 mm.
     reset_height_lower: float = 0.58906
     reset_height_upper: float = 0.64906
-    grasp_cache_path: str = "robots/leap_hand/caches/ball_grasp_allegro_new_physics_0731_50k"
+    grasp_cache_path: str = "robots/leap_hand/caches/ball_grasp_hora_sharpa_style_50k"
     use_default_object_pose_for_object_pos_anchor: bool = True
 
 
@@ -200,7 +200,7 @@ class LeapInhandBall0730HoraAppoDRProvider(SharpaInhandRotationDRProvider):
                 f"{missing}\n"
                 "Generate every configured scale cache with:\n"
                 "  bash scripts/leap_collect_hora_grasps.sh "
-                "0.8 0.9 1.0 1.1 1.2 1.3 1.4 1.5\n"
+                "0.8 1.0 1.2\n"
                 "scale=1.0 cache fallback is intentionally disabled."
             )
 

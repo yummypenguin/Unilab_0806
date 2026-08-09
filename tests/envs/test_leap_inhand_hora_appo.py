@@ -60,14 +60,32 @@ def test_hora_appo_owner_composes_sharpa_parity_contract() -> None:
         "work": -0.5,
         "object_pos": 0.003,
     }
-    assert cfg.env.sim_dt == pytest.approx(1.0 / 240.0)
+    assert cfg.env.sim_dt == pytest.approx(0.005)
     assert cfg.env.ctrl_dt == pytest.approx(0.05)
+    assert cfg.env.ctrl_dt / cfg.env.sim_dt == pytest.approx(10.0)
     assert cfg.env.control_config.action_scale == pytest.approx(1.0 / 24.0)
-    assert cfg.env.control_config.dof_limits_scale == pytest.approx(0.9)
+    assert cfg.env.control_config.p_gain == pytest.approx(3.0)
+    assert cfg.env.control_config.d_gain == pytest.approx(0.01)
+    assert cfg.env.control_config.dof_limits_scale == pytest.approx(1.0)
     assert cfg.env.reset_height_upper - cfg.env.reset_height_lower == pytest.approx(0.06)
     assert cfg.env.obs.observation_mode == "separated"
     assert cfg.env.sensor.tactile_force_sensor_names == list(LEAP_TACTILE_FORCE_SENSOR_NAMES)
-    assert cfg.env.domain_rand.scale_list == [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
+    assert cfg.env.object_visual_mesh_name == "leap_ball_visual_mesh"
+    assert cfg.env.domain_rand.scale_list == [0.8, 1.0, 1.2]
+    assert cfg.env.domain_rand.randomize_gravity_direction is True
+    assert cfg.env.domain_rand.gravity_direction_magnitude == pytest.approx(9.81)
+    assert cfg.env.domain_rand.gravity_direction_tilt_max_deg == pytest.approx(3.0)
+    assert cfg.env.domain_rand.randomize_p_gain_scale_lower == pytest.approx(2.9 / 3.0)
+    assert cfg.env.domain_rand.randomize_p_gain_scale_upper == pytest.approx(3.1 / 3.0)
+    assert cfg.env.domain_rand.randomize_d_gain_scale_lower == pytest.approx(0.9)
+    assert cfg.env.domain_rand.randomize_d_gain_scale_upper == pytest.approx(1.1)
+    assert cfg.env.domain_rand.randomize_friction_scale_lower == pytest.approx(0.3)
+    assert cfg.env.domain_rand.randomize_friction_scale_upper == pytest.approx(3.0)
+    assert cfg.env.domain_rand.scale_xml_friction_per_geom is True
+    assert cfg.env.domain_rand.force_scale == pytest.approx(2.0)
+    assert cfg.env.domain_rand.joint_noise_scale == pytest.approx(0.0)
+    assert cfg.env.domain_rand.contact_latency == pytest.approx(0.005)
+    assert cfg.env.domain_rand.contact_sensor_noise == pytest.approx(0.01)
     assert "termination_drop_distance" not in cfg.env
     assert "hora_domain_rand" not in cfg.env
 
@@ -78,6 +96,50 @@ def test_hora_appo_registry_isolated_from_legacy_hora_ppo() -> None:
     assert registered["LeapInhandBall0730HoraAppoRotation"]["available_backends"] == ["mujoco"]
     assert issubclass(LeapInhandBall0730HoraAppoRotationEnv, SharpaInhandRotationEnv)
     assert "LeapInhandBall0730HoraRotation" in registered
+
+
+def test_hora_appo_gravity_direction_is_limited_to_three_degree_cone() -> None:
+    env = object.__new__(LeapInhandBall0730HoraAppoRotationEnv)
+    env._cfg = LeapInhandBall0730HoraAppoRotationCfg()
+
+    gravity = env._build_gravity_direction_randomization(4096)
+
+    assert gravity is not None
+    np.testing.assert_allclose(np.linalg.norm(gravity, axis=1), 9.81)
+    tilt_deg = np.rad2deg(np.arccos(np.clip(-gravity[:, 2] / 9.81, -1.0, 1.0)))
+    assert np.all(tilt_deg <= 3.0 + 1.0e-10)
+    assert np.any(tilt_deg > 0.0)
+
+
+def test_hora_appo_friction_scales_each_xml_geom_without_flattening_profiles() -> None:
+    env = object.__new__(LeapInhandBall0730HoraAppoRotationEnv)
+    env._base_geom_friction = np.asarray(
+        [
+            [0.2, 0.005, 0.0001],
+            [0.5, 0.005, 0.0001],
+            [2.0, 0.05, 0.01],
+            [0.2, 0.005, 0.0001],
+        ],
+        dtype=np.float64,
+    )
+    env._friction_geom_ids = {
+        "metal": np.asarray([0], dtype=np.int32),
+        "elastomer": np.asarray([1], dtype=np.int32),
+        "object": np.asarray([2], dtype=np.int32),
+    }
+    env._cfg = SimpleNamespace(
+        domain_rand=SimpleNamespace(scale_xml_friction_per_geom=True)
+    )
+
+    result = env._build_friction_randomization(
+        2,
+        np.asarray([[1.0], [0.5]], dtype=np.float64),
+    )
+
+    assert result is not None
+    np.testing.assert_allclose(result[0], env._base_geom_friction)
+    np.testing.assert_allclose(result[1, :3], env._base_geom_friction[:3] * 0.5)
+    np.testing.assert_allclose(result[1, 3], env._base_geom_friction[3])
 
 
 def test_leap_embodiment_dimensions_and_nominal_anchor() -> None:
@@ -247,7 +309,7 @@ def test_scale_cache_error_includes_generation_command(
 
 
 def test_real_mujoco_reset_and_step_contract(tmp_path: Path) -> None:
-    pytest.importorskip("mujoco")
+    mujoco = pytest.importorskip("mujoco")
     try:
         from mujoco.batch_env import BatchEnvPool as _  # noqa: F401
     except Exception:
@@ -285,6 +347,28 @@ def test_real_mujoco_reset_and_step_contract(tmp_path: Path) -> None:
     )
     env = LeapInhandBall0730HoraAppoRotationEnv(cfg, num_envs=2, backend_type="mujoco")
     try:
+        variant_0 = env._backend.get_playback_model_variant_spec(0)
+        variant_1 = env._backend.get_playback_model_variant_spec(1)
+        assert variant_0 is not None
+        assert variant_1 is not None
+        assert variant_0.mesh_scale_multipliers[0].mesh_name == "leap_ball_visual_mesh"
+        np.testing.assert_allclose(variant_0.mesh_scale_multipliers[0].multiplier, [0.8] * 3)
+        np.testing.assert_allclose(variant_1.mesh_scale_multipliers[0].multiplier, [1.0] * 3)
+
+        from unilab.base.backend.mujoco.playback import resolve_render_play_model_files
+
+        viewer_dir = tmp_path / "viewer_models"
+        viewer_dir.mkdir()
+        viewer_files = resolve_render_play_model_files(env, num_envs=2, tmp_dir=viewer_dir)
+        assert isinstance(viewer_files, list)
+        viewer_models = [mujoco.MjModel.from_binary_path(path) for path in viewer_files]
+        mesh_ids = [
+            mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_MESH, "leap_ball_visual_mesh")
+            for model in viewer_models
+        ]
+        assert all(mesh_id >= 0 for mesh_id in mesh_ids)
+        np.testing.assert_allclose(viewer_models[0].mesh_scale[mesh_ids[0]], [0.0335 * 0.8] * 3)
+        np.testing.assert_allclose(viewer_models[1].mesh_scale[mesh_ids[1]], [0.0335] * 3)
         state = env.init_state()
         assert state.obs["obs"].shape == (2, 108)
         assert state.obs["critic"].shape == (2, 117)

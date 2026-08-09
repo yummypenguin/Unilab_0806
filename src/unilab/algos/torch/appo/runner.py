@@ -342,6 +342,26 @@ class APPORunner(AsyncRunner):
                 if rollout_ring_buffer.wait_for_data(timeout=min(LIVENESS_SLICE_SEC, remaining)):
                     data_ready = True
                     break
+                collector_process = self._collector_process
+                if (
+                    collector_process is not None
+                    and not collector_process.is_alive()
+                    and collector_process.exitcode == 0
+                ):
+                    logger.log_status("Collector completed its task and exited cleanly.")
+                    if logger_started:
+                        logger.finish()
+                    self.last_run_summary = {
+                        "status": "collector_completed",
+                        "completed_iterations": iteration - 1,
+                        "total_env_steps": int(getattr(logger, "_total_steps", 0)),
+                        "final_mean_reward": None,
+                        "best_mean_reward": None,
+                        "mean_episode_length": float(getattr(logger, "_mean_ep_length", 0.0)),
+                        "last_checkpoint": None,
+                        "training_wall_time_sec": time.time() - train_start_wall,
+                    }
+                    return
                 if not self._check_collector_alive():
                     self._drain_metrics(
                         metrics_queue, reward_history, latest_reward_components, logger

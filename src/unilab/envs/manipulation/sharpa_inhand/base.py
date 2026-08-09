@@ -124,6 +124,7 @@ class SharpaDomainRandConfig:
     )
     randomize_gravity_direction: bool = False
     gravity_direction_magnitude: float = 9.81
+    gravity_direction_tilt_max_deg: float | None = None
     randomize_pd_gains: bool = True
     randomize_p_gain_scale_lower: float = 0.5
     randomize_p_gain_scale_upper: float = 2.0
@@ -132,6 +133,7 @@ class SharpaDomainRandConfig:
     randomize_friction: bool = True
     randomize_friction_scale_lower: float = 0.5
     randomize_friction_scale_upper: float = 2.0
+    scale_xml_friction_per_geom: bool = False
     elastomer_base_friction: float = 1.6
     metal_base_friction: float = 0.2
     object_base_friction: float = 1.0
@@ -178,6 +180,7 @@ class SharpaInhandBaseCfg(EnvCfg):
     base_name: str = "right_hand_C_MC"
     object_body_name: str = "object"
     object_geom_name: str = "object"
+    object_visual_mesh_name: str | None = None
     actuated_joint_names: list[str] = field(
         default_factory=lambda: list(DEFAULT_ACTUATED_JOINT_NAMES)
     )

@@ -65,7 +65,8 @@ reward:
   angvel_clip_max: 0.5
 
 env:
-  sim_dt: 0.004166666666666667
+  object_visual_mesh_name: leap_ball_visual_mesh
+  sim_dt: 0.005
   ctrl_dt: 0.05
   max_episode_seconds: 20.0
   post_step_forward_sensor: true
@@ -75,7 +76,7 @@ env:
   reset_height_lower: 0.58906
   reset_height_upper: 0.64906
   rot_axis: [0.0, 0.0, 1.0]
-  grasp_cache_path: robots/leap_hand/caches/ball_grasp_allegro_new_physics_0731_50k
+  grasp_cache_path: robots/leap_hand/caches/ball_grasp_hora_sharpa_style_50k
   use_default_object_pose_for_object_pos_anchor: true
   default_hand_joint_pos:
     - 1.5152045040427635
@@ -123,25 +124,32 @@ env:
     include_gravity_direction: false
   control_config:
     action_scale: 0.041666666666666664
-    p_gain: 1.0
-    d_gain: 0.1
+    # Match the model-owned LEAP 0730 MuJoCo actuator gains.
+    p_gain: 3.0
+    d_gain: 0.01
     torque_control: false
-    dof_limits_scale: 0.9
+    # Official LEAP clamps policy targets to the full URDF joint range.
+    dof_limits_scale: 1.0
   domain_rand:
-    scale_list: [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
+    scale_list: [0.8, 1.0, 1.2]
+    # Match the HORA reset-domain randomization: fixed magnitude with at most
+    # three degrees of tilt away from nominal downward gravity.
     randomize_gravity_direction: true
     gravity_direction_magnitude: 9.81
+    gravity_direction_tilt_max_deg: 3.0
     randomize_pd_gains: true
-    randomize_p_gain_scale_lower: 0.5
-    randomize_p_gain_scale_upper: 2.0
-    randomize_d_gain_scale_lower: 0.5
-    randomize_d_gain_scale_upper: 2.0
+    # Official absolute P range is 2.9..3.1. Preserve the same relative
+    # perturbation around UniLab's LEAP 0730 model-owned nominal gains.
+    randomize_p_gain_scale_lower: 0.9666666666666667
+    randomize_p_gain_scale_upper: 1.0333333333333334
+    randomize_d_gain_scale_lower: 0.9
+    randomize_d_gain_scale_upper: 1.1
     randomize_friction: true
-    randomize_friction_scale_lower: 0.75
-    randomize_friction_scale_upper: 1.25
-    elastomer_base_friction: 2.0
-    metal_base_friction: 1.0
-    object_base_friction: 2.0
+    # Preserve every LEAP 0730 XML geom's full sliding/torsional/rolling
+    # friction vector and apply domain randomization as a multiplier.
+    randomize_friction_scale_lower: 0.3
+    randomize_friction_scale_upper: 3.0
+    scale_xml_friction_per_geom: true
     randomize_com: true
     randomize_com_lower: -0.01
     randomize_com_upper: 0.01
@@ -152,7 +160,8 @@ env:
     random_force_prob_scalar: 0.25
     force_decay: 0.9
     force_decay_interval: 0.08
-    joint_noise_scale: 0.02
+    # Preserve the existing HORA/Sharpa observation perturbation strengths.
+    joint_noise_scale: 0.0
     contact_latency: 0.005
     contact_sensor_noise: 0.01
 

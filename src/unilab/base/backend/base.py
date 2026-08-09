@@ -10,6 +10,7 @@ from unilab.dr.types import (
     DomainRandomizationCapabilities,
     InitRandomizationPlan,
     IntervalRandomizationPlan,
+    ModelVariantSpec,
     ResetRandomizationPayload,
 )
 
@@ -499,6 +500,13 @@ class SimBackend(abc.ABC):
             The backend model object used by playback tooling.
         """
         return self.model
+
+    def get_playback_model_variant_spec(
+        self, env_index: int | None = None
+    ) -> ModelVariantSpec | None:
+        """Return cold-path visual metadata for a playback model variant."""
+        del env_index
+        return None
 
     def get_actuator_gains(self) -> tuple[np.ndarray, np.ndarray]:
         """Return per-joint (kp, kd) arrays from the backend model."""

@@ -11,6 +11,7 @@ import numpy as np
 
 from unilab.base.backend.playback_common import env_cfg_value, write_playback_video
 from unilab.base.scene import SceneCfg
+from unilab.dr.types import ModelVariantSpec
 
 ObsT = TypeVar("ObsT")
 
@@ -133,6 +134,13 @@ def _visual_model_file(env: Any) -> str | None:
     return _configured_model_file(env)
 
 
+def _playback_variant_spec(env: Any, env_index: int) -> ModelVariantSpec | None:
+    backend = getattr(env, "_backend", None)
+    if backend is None:
+        return None
+    return backend.get_playback_model_variant_spec(env_index)
+
+
 def resolve_render_play_model_files(
     env: Any,
     *,
@@ -177,6 +185,7 @@ def resolve_render_play_model_files(
                     visual_model_file=visual_model_file,
                     visual_base_model=visual_base,
                     playback_model=playback_model,
+                    variant_spec=_playback_variant_spec(env, env_idx),
                     output_path=output_path,
                 )
             path_by_model_id[key] = saved
@@ -192,6 +201,7 @@ def materialize_visual_playback_model(
     visual_model_file: str,
     visual_base_model: Any,
     playback_model: Any,
+    variant_spec: ModelVariantSpec | None = None,
     output_path: str | Path,
 ) -> str:
     """Compile a visual MuJoCo model using geom sizes from a playback model."""
@@ -211,6 +221,19 @@ def materialize_visual_playback_model(
         if geom is None:
             continue
         geom.size = list(np.asarray(playback_model.geom_size[playback_geom_id], dtype=np.float64))
+
+    if variant_spec is not None:
+        for override in variant_spec.mesh_scale_multipliers:
+            mesh = spec.mesh(override.mesh_name)
+            if mesh is None:
+                raise ValueError(
+                    f"Mesh '{override.mesh_name}' not found in visual MuJoCo model "
+                    f"'{visual_model_file}'"
+                )
+            mesh.scale = list(
+                np.asarray(mesh.scale, dtype=np.float64)
+                * np.asarray(override.multiplier, dtype=np.float64)
+            )
 
     visual_model = spec.compile()
     output = Path(output_path)

@@ -21,16 +21,12 @@ reward:
     torque: 0.0
     work: 0.0
     drop: 0.0
-  # Compatibility field required by RewardConfigPPO. Grasp survival uses each
-  # reset proposal's initial_ball_z minus env.termination_drop_distance.
   reset_z_threshold: 0.0
 
 env:
   gen_grasp: true
   reset_source: home
   max_episode_seconds: 3.0
-  # One run generates one physical-scale bucket. HORA parity collection commands
-  # override both this value and grasp_cache_path explicitly.
   object_scale: 1.0
 
   grasp_cache_path: robots/leap_hand/caches/ball_grasp_hora_sharpa_style_50k.npy

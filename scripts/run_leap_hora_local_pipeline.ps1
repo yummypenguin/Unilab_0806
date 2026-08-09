@@ -1,5 +1,7 @@
 param(
-    [string]$RunRoot = "logs/local_hora_pipeline"
+    [string]$RunRoot = "logs/local_hora_pipeline",
+    [string[]]$Scales = @("0.8", "1.0", "1.2"),
+    [switch]$CacheOnly
 )
 
 Set-StrictMode -Version Latest
@@ -9,9 +11,8 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
 $UvCache = Join-Path $env:TEMP "unilab-uv-cache"
-$CachePrefix = "robots/leap_hand/caches/ball_grasp_allegro_new_physics_0731_50k"
+$CachePrefix = "robots/leap_hand/caches/ball_grasp_hora_sharpa_style_50k"
 $CacheDiskPrefix = Join-Path $RepoRoot "src/unilab/assets/$CachePrefix"
-$Scales = @("0.8", "0.9", "1.0", "1.1", "1.2", "1.3", "1.4", "1.5")
 $StatusFile = Join-Path $RepoRoot "$RunRoot/pipeline_status.txt"
 
 New-Item -ItemType Directory -Force (Split-Path -Parent $StatusFile) | Out-Null
@@ -36,10 +37,10 @@ function Test-Cache([string]$Path) {
 import sys
 import numpy as np
 
-rows = np.load(sys.argv[1], mmap_mode="r")
+rows = np.load(sys.argv[1], mmap_mode='r')
 if rows.ndim != 2 or rows.shape[1] != 23 or rows.shape[0] < 50_000:
-    raise SystemExit(f"invalid cache shape: {rows.shape}")
-print(f"verified {sys.argv[1]}: {rows.shape}")
+    raise SystemExit(rows.shape)
+print(sys.argv[1], rows.shape)
 '@
     & uv run --cache-dir $UvCache python -c $verifyCode $Path
     return $LASTEXITCODE -eq 0
@@ -61,12 +62,11 @@ try {
         Write-Phase "cache_start scale=$scale path=$cachePath"
         Invoke-Uv @(
             "train",
-            "--algo", "ppo",
+            "--algo", "appo",
             "--task", "leap_inhand_ball_grasp_allegro",
             "--sim", "mujoco",
             "training.no_play=true",
             "training.device=cpu",
-            "training.capture_git_state=false",
             "env.object_scale=$scale",
             "env.grasp_cache_path=$logicalPath"
         )
@@ -74,6 +74,11 @@ try {
             throw "cache validation failed for scale=$scale path=$cachePath"
         }
         Write-Phase "cache_complete scale=$scale path=$cachePath"
+    }
+
+    if ($CacheOnly) {
+        Write-Phase "cache_only_complete scales=$($Scales -join ',')"
+        return
     }
 
     Write-Phase "tests_start"

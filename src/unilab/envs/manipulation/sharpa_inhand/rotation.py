@@ -16,6 +16,7 @@ from unilab.dr import (
     GeomSizeOverride,
     InitRandomizationPlan,
     IntervalRandomizationPlan,
+    MeshScaleMultiplier,
     ModelVariantSpec,
     ResetPlan,
 )
@@ -137,6 +138,7 @@ class SharpaInhandRotationDRProvider(DomainRandomizationProvider):
         if base_size is None:
             return None
 
+        visual_mesh_name = getattr(env.cfg, "object_visual_mesh_name", None)
         model_variants = tuple(
             ModelVariantSpec(
                 geom_size_overrides=(
@@ -144,7 +146,17 @@ class SharpaInhandRotationDRProvider(DomainRandomizationProvider):
                         geom_name=env.cfg.object_geom_name,
                         size=tuple(np.asarray(base_size * scale, dtype=np.float64)),
                     ),
-                )
+                ),
+                mesh_scale_multipliers=(
+                    (
+                        MeshScaleMultiplier(
+                            mesh_name=str(visual_mesh_name),
+                            multiplier=(float(scale), float(scale), float(scale)),
+                        ),
+                    )
+                    if visual_mesh_name is not None
+                    else ()
+                ),
             )
             for scale in np.asarray(env.scale_values, dtype=np.float64)
         )
@@ -830,6 +842,13 @@ class SharpaInhandRotationEnv(SharpaInhandBaseEnv):
         ).copy()
         scale = np.asarray(friction_scale, dtype=np.float64).reshape(batch_size, 1, 1)
         domain_rand = self._cfg.domain_rand
+        if domain_rand.scale_xml_friction_per_geom:
+            randomized_geom_ids = np.unique(
+                np.concatenate(tuple(self._friction_geom_ids.values()))
+            )
+            geom_friction[:, randomized_geom_ids, :] *= scale
+            return geom_friction
+
         material_profiles = {
             "object": self._friction_profile("object", domain_rand.object_base_friction),
             "elastomer": self._friction_profile("elastomer", domain_rand.elastomer_base_friction),
@@ -907,6 +926,25 @@ class SharpaInhandRotationEnv(SharpaInhandBaseEnv):
         magnitude = float(getattr(domain_rand, "gravity_direction_magnitude", 9.81))
         if magnitude <= 0.0:
             raise ValueError(f"gravity_direction_magnitude must be positive, got {magnitude}")
+        tilt_max_deg = getattr(domain_rand, "gravity_direction_tilt_max_deg", None)
+        if tilt_max_deg is not None:
+            tilt_max_deg = float(tilt_max_deg)
+            if not 0.0 <= tilt_max_deg <= 180.0:
+                raise ValueError(
+                    "gravity_direction_tilt_max_deg must be in [0, 180], "
+                    f"got {tilt_max_deg}"
+                )
+            max_tilt = np.deg2rad(tilt_max_deg)
+            tilt = max_tilt * np.sqrt(np.random.uniform(0.0, 1.0, size=batch_size))
+            azimuth = np.random.uniform(-np.pi, np.pi, size=batch_size)
+            return magnitude * np.stack(
+                [
+                    np.sin(tilt) * np.cos(azimuth),
+                    np.sin(tilt) * np.sin(azimuth),
+                    -np.cos(tilt),
+                ],
+                axis=1,
+            )
         gravity = np.zeros((batch_size, 3), dtype=np.float64)
         gravity[:, 2] = -magnitude
         random_quat = sample_random_quaternion(batch_size)

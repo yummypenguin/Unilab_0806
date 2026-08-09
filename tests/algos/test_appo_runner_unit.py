@@ -473,3 +473,54 @@ def test_appo_runner_fails_fast_when_collector_dies_during_wait(
     # below the 60s total wait budget.
     assert elapsed < 5.0, f"chunked wait took {elapsed:.2f}s — should fail fast"
     assert call_count["n"] >= 2, "liveness check should be called at least twice"
+
+
+def test_appo_runner_accepts_clean_collector_completion(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    class CleanlyCompletedCollector:
+        exitcode = 0
+
+        @staticmethod
+        def is_alive() -> bool:
+            return False
+
+    def fake_detect_dims(self: APPORunner) -> tuple[int, int]:
+        self.critic_dim = 7
+        self.critic_input_dim = 5
+        return (4, 2)
+
+    def never_ready(self: _FakeRolloutRingBuffer, timeout: float = 60.0) -> bool:
+        del timeout
+        return False
+
+    monkeypatch.setattr(APPORunner, "_detect_dims", fake_detect_dims)
+    monkeypatch.setattr(APPORunner, "_build_learner", lambda self: _FakeLearner())
+    monkeypatch.setattr(_FakeRolloutRingBuffer, "wait_for_data", never_ready)
+    monkeypatch.setattr(appo_runner_module, "RolloutRingBuffer", _FakeRolloutRingBuffer)
+    monkeypatch.setattr(appo_runner_module, "SharedWeightSync", _FakeWeightSync)
+    monkeypatch.setattr(appo_runner_module, "OffPolicyLogger", _FakeLogger)
+    monkeypatch.setattr(appo_runner_module.mp, "get_context", lambda method: queue)
+
+    runner = APPORunner(
+        env_name="DummyEnv",
+        env_cfg_overrides={},
+        rl_cfg={"actor": {}, "critic": {}, "algorithm": {}},
+        device="cpu",
+        collector_device="cpu",
+        sim_backend="mujoco",
+        num_envs=2,
+        steps_per_env=4,
+    )
+
+    def start_clean_collector(*args, **kwargs) -> None:
+        del args, kwargs
+        runner._collector_process = CleanlyCompletedCollector()
+
+    monkeypatch.setattr(runner, "_start_collector", start_clean_collector)
+
+    runner.learn(max_iterations=1, save_interval=0, log_dir=str(tmp_path))
+
+    assert runner.last_run_summary["status"] == "collector_completed"
+    assert runner.last_run_summary["completed_iterations"] == 0
+    assert runner.last_run_summary["last_checkpoint"] is None

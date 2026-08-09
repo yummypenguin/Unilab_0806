@@ -26,11 +26,20 @@ class GeomSizeOverride:
 
 
 @dataclass(frozen=True)
+class MeshScaleMultiplier:
+    """Cold-path visual mesh scaling attached to a model variant."""
+
+    mesh_name: str
+    multiplier: tuple[float, float, float]
+
+
+@dataclass(frozen=True)
 class ModelVariantSpec:
     geom_size_overrides: tuple[GeomSizeOverride, ...] = field(default_factory=tuple)
+    mesh_scale_multipliers: tuple[MeshScaleMultiplier, ...] = field(default_factory=tuple)
 
     def is_empty(self) -> bool:
-        return not self.geom_size_overrides
+        return not self.geom_size_overrides and not self.mesh_scale_multipliers
 
 
 @dataclass(frozen=True)

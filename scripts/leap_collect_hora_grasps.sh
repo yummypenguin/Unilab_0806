@@ -7,10 +7,10 @@ cd "${repo_root}"
 if [[ "$#" -gt 0 ]]; then
   scales=("$@")
 else
-  scales=(0.8 0.9 1.0 1.1 1.2 1.3 1.4 1.5)
+  scales=(0.8 1.0 1.2)
 fi
 
-cache_prefix="robots/leap_hand/caches/ball_grasp_allegro_new_physics_0731_50k"
+cache_prefix="robots/leap_hand/caches/ball_grasp_hora_sharpa_style_50k"
 
 for scale in "${scales[@]}"; do
   # Match resolve_grasp_cache_file()'s canonical ``:g`` tag. In particular,
@@ -19,7 +19,7 @@ for scale in "${scales[@]}"; do
   output_path="${cache_prefix}_${scale_tag}.npy"
   echo "Collecting LEAP HORA grasp cache: scale=${scale}, output=${output_path}"
   uv run train \
-    --algo ppo \
+    --algo appo \
     --task leap_inhand_ball_grasp_allegro \
     --sim mujoco \
     training.no_play=true \
