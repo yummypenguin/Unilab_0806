@@ -83,6 +83,18 @@ def _write_distill_run_config(
         f.write("\n")
 
 
+def _write_owner_deploy_contract(log_dir: Path, env: Any) -> None:
+    """Persist an optional cold-path deployment manifest supplied by the task owner."""
+
+    manifest_builder = getattr(env, "build_deploy_contract_manifest", None)
+    if not callable(manifest_builder):
+        return
+    payload = manifest_builder()
+    with (log_dir / "leap_hora_deploy_contract.json").open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, allow_nan=False)
+        f.write("\n")
+
+
 def _build_env_cfg_override(cfg: DictConfig) -> dict[str, Any]:
     adapter = BackendAdapter(
         cfg,
@@ -349,6 +361,7 @@ def main(cfg: DictConfig) -> None:
         num_envs=int(cfg.algo.num_envs),
         env_cfg_override=_build_env_cfg_override(cfg),
     )
+    _write_owner_deploy_contract(log_dir, env)
     wrapped_env = RslRlVecEnvWrapper(env, device=device, policy_obs_mode="actor")
     trainer = HoraDistillationTrainer(
         wrapped_env,

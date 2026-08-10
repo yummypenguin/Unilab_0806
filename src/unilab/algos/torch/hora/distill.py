@@ -14,6 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 from tensordict import TensorDict
 
 from unilab.algos.torch.common.normalization import EmpiricalNormalization
+from unilab.algos.torch.hora.appo_runner import _validate_hora_actor_observation_contract
 from unilab.algos.torch.hora.models import (
     HoraActorModel,
     HoraCoreOutput,
@@ -272,6 +273,15 @@ def load_teacher_actor_weights(
             "Checkpoint does not contain the expected teacher actor weights. "
             f"algo_family={teacher_algo_family!r} expected_key={actor_state_key!r} "
             f"checkpoint={teacher_checkpoint}"
+        )
+    if str(teacher_algo_family) == "appo":
+        shared = getattr(actor, "shared", None)
+        if shared is None:
+            raise ValueError("Selected distillation actor does not expose a shared HORA model.")
+        _validate_hora_actor_observation_contract(
+            checkpoint,
+            current_actor_obs_dim=int(shared.obs_dim),
+            current_privileged_latent_dim=int(shared.priv_info_embed_dim),
         )
     actor.load_state_dict(actor_state, strict=False)
 

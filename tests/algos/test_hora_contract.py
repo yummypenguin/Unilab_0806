@@ -393,6 +393,31 @@ def test_hora_appo_resume_rejects_inconsistent_shared_checkpoint() -> None:
         _validate_hora_shared_checkpoint(bad_checkpoint)
 
 
+def test_hora_appo_rejects_legacy_tactile_actor_contract() -> None:
+    from unilab.algos.torch.hora.appo_runner import (
+        _validate_hora_actor_observation_contract,
+    )
+
+    learner = _make_hora_appo_learner()
+    actor_state = copy.deepcopy(learner.actor.state_dict())
+    trunk_key = "shared.trunk.net.0.weight"
+    current_weight = actor_state[trunk_key]
+    actor_state[trunk_key] = torch.zeros(
+        (current_weight.shape[0], 108 + learner.actor.shared.priv_info_embed_dim)
+    )
+    checkpoint = {"actor": actor_state}
+
+    with pytest.raises(
+        ValueError,
+        match="(?s)checkpoint expects 108 dims.*current task provides 96 dims.*simulated tactile",
+    ):
+        _validate_hora_actor_observation_contract(
+            checkpoint,
+            current_actor_obs_dim=96,
+            current_privileged_latent_dim=learner.actor.shared.priv_info_embed_dim,
+        )
+
+
 def test_hora_appo_combined_optimizer_has_unique_parameters() -> None:
     learner = _make_hora_appo_learner()
 

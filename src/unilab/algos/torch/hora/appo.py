@@ -11,7 +11,10 @@ from typing import Any, cast
 import torch
 from omegaconf import DictConfig
 
-from unilab.algos.torch.hora.appo_runner import HoraAPPORunner
+from unilab.algos.torch.hora.appo_runner import (
+    HoraAPPORunner,
+    _validate_hora_actor_observation_contract,
+)
 from unilab.algos.torch.hora.rsl_rl_compat import (
     convert_config_v3_to_v4,
     is_rsl_rl_v4,
@@ -185,6 +188,11 @@ def play_hora_appo(
 
     print(f"Loading model: {load_path}")
     checkpoint = torch.load(load_path, map_location=device, weights_only=True)
+    _validate_hora_actor_observation_contract(
+        checkpoint,
+        current_actor_obs_dim=shared_model.obs_dim,
+        current_privileged_latent_dim=shared_model.priv_info_embed_dim,
+    )
     actor.load_state_dict(checkpoint["actor"])
 
     current_priv_info: np.ndarray | None = None

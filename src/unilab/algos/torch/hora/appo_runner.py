@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import multiprocessing as mp
 import os
 import time
 from collections import deque
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -61,6 +63,40 @@ def _validate_hora_shared_checkpoint(checkpoint: dict[str, Any]) -> None:
             raise ValueError("Invalid HORA APPO checkpoint: shared model state is inconsistent.")
 
 
+def _validate_hora_actor_observation_contract(
+    checkpoint: dict[str, Any],
+    *,
+    current_actor_obs_dim: int,
+    current_privileged_latent_dim: int,
+) -> None:
+    """Fail closed before loading a HORA APPO actor with a different input contract."""
+
+    actor_state = checkpoint.get("actor")
+    if not isinstance(actor_state, dict):
+        raise ValueError("HORA APPO checkpoint must contain an actor state dict.")
+    trunk_weight = actor_state.get("shared.trunk.net.0.weight")
+    if not torch.is_tensor(trunk_weight) or trunk_weight.ndim != 2:
+        raise ValueError(
+            "HORA APPO checkpoint does not expose shared.trunk.net.0.weight; "
+            "the actor observation contract cannot be validated safely."
+        )
+    checkpoint_actor_obs_dim = int(trunk_weight.shape[1]) - int(current_privileged_latent_dim)
+    if checkpoint_actor_obs_dim == int(current_actor_obs_dim):
+        return
+
+    message = (
+        "HORA actor observation contract mismatch:\n"
+        f"checkpoint expects {checkpoint_actor_obs_dim} dims\n"
+        f"current task provides {int(current_actor_obs_dim)} dims."
+    )
+    if checkpoint_actor_obs_dim == 108 and int(current_actor_obs_dim) == 96:
+        message += (
+            "\nThis checkpoint was trained with simulated tactile observations "
+            "and is not compatible with the deployable no-tactile LEAP contract."
+        )
+    raise ValueError(message)
+
+
 class HoraAPPORunner(APPORunner):
     """APPO runner variant that preserves grouped HORA observations."""
 
@@ -94,6 +130,10 @@ class HoraAPPORunner(APPORunner):
             env_cfg_override=self.env_cfg_overrides if self.env_cfg_overrides else None,
         )
         obs_dim, critic_dim = get_obs_dims(env.obs_groups_spec)
+        # Cold-path owner hook: materialize deploy metadata from the same model
+        # that owns training joint order and normalization bounds.
+        manifest_builder = getattr(env, "build_deploy_contract_manifest", None)
+        self.deploy_contract_manifest = manifest_builder() if callable(manifest_builder) else None
         self.critic_dim = critic_dim
         self.critic_input_dim = get_critic_base_dim(env.obs_groups_spec)
         if env.state is None:
@@ -213,6 +253,12 @@ class HoraAPPORunner(APPORunner):
         logger_type: str = "tensorboard",
     ) -> None:
         os.makedirs(log_dir, exist_ok=True)
+        if isinstance(getattr(self, "deploy_contract_manifest", None), dict):
+            manifest_path = Path(log_dir) / "leap_hora_deploy_contract.json"
+            manifest_path.write_text(
+                json.dumps(self.deploy_contract_manifest, indent=2, allow_nan=False) + "\n",
+                encoding="utf-8",
+            )
         train_start_wall = time.time()
         best_mean_reward = float("-inf")
         last_mean_reward = 0.0
@@ -223,6 +269,11 @@ class HoraAPPORunner(APPORunner):
         if self.resume_path:
             checkpoint = torch.load(self.resume_path, map_location=self.device, weights_only=True)
             _validate_hora_shared_checkpoint(checkpoint)
+            _validate_hora_actor_observation_contract(
+                checkpoint,
+                current_actor_obs_dim=learner.actor.shared.obs_dim,
+                current_privileged_latent_dim=learner.actor.shared.priv_info_embed_dim,
+            )
             learner.actor.load_state_dict(checkpoint["actor"])
             learner.critic.load_state_dict(checkpoint["critic"])
             if "optimizer" in checkpoint:

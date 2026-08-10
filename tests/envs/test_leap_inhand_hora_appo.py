@@ -69,6 +69,7 @@ def test_hora_appo_owner_composes_sharpa_parity_contract() -> None:
     assert cfg.env.control_config.dof_limits_scale == pytest.approx(1.0)
     assert cfg.env.reset_height_upper - cfg.env.reset_height_lower == pytest.approx(0.06)
     assert cfg.env.obs.observation_mode == "separated"
+    assert cfg.env.obs.enable_tactile is False
     assert cfg.env.sensor.tactile_force_sensor_names == list(LEAP_TACTILE_FORCE_SENSOR_NAMES)
     assert cfg.env.object_visual_mesh_name == "leap_ball_visual_mesh"
     assert cfg.env.domain_rand.scale_list == [0.8, 1.0, 1.2]
@@ -127,9 +128,7 @@ def test_hora_appo_friction_scales_each_xml_geom_without_flattening_profiles() -
         "elastomer": np.asarray([1], dtype=np.int32),
         "object": np.asarray([2], dtype=np.int32),
     }
-    env._cfg = SimpleNamespace(
-        domain_rand=SimpleNamespace(scale_xml_friction_per_geom=True)
-    )
+    env._cfg = SimpleNamespace(domain_rand=SimpleNamespace(scale_xml_friction_per_geom=True))
 
     result = env._build_friction_randomization(
         2,
@@ -149,17 +148,31 @@ def test_leap_embodiment_dimensions_and_nominal_anchor() -> None:
     assert len(cfg.fingertip_body_names) == 4
     assert len(cfg.sensor.tactile_force_sensor_names) == 4
     assert cfg.tactile_diagnostic_names == ["index", "middle", "ring", "thumb"]
-    frame_dim = 2 * cfg.num_hand_dofs + len(cfg.sensor.tactile_force_sensor_names)
-    assert frame_dim == 36
-    assert cfg.obs_lag_steps * frame_dim == 108
-    assert cfg.obs_lag_steps * frame_dim + cfg.critic_info_dim == 117
-    assert (cfg.prop_hist_len, frame_dim) == (30, 36)
+    assert cfg.obs.enable_tactile is False
+    frame_dim = cfg.frame_obs_dim
+    assert frame_dim == 32
+    assert cfg.obs_lag_steps * frame_dim == 96
+    assert cfg.obs_lag_steps * frame_dim + cfg.critic_info_dim == 105
+    assert (cfg.prop_hist_len, frame_dim) == (30, 32)
     np.testing.assert_allclose(
         cfg.default_object_pose[:3],
         [-0.032440416893199604, 0.041151239943936, 0.664301098275159],
     )
     assert len(cfg.default_hand_joint_pos) == 16
     assert cfg.reset_height_upper - cfg.reset_height_lower == pytest.approx(0.06)
+
+
+def test_leap_privileged_info_layout_remains_nine_simulation_only_channels() -> None:
+    env = object.__new__(LeapInhandBall0730HoraAppoRotationEnv)
+    env._cfg = LeapInhandBall0730HoraAppoRotationCfg()
+
+    assert env._critic_info_layout() == {
+        "object_pos_delta": slice(0, 3),
+        "friction": slice(3, 4),
+        "mass": slice(4, 5),
+        "com": slice(5, 8),
+        "scale": slice(8, 9),
+    }
 
 
 def test_sharpa_defaults_remain_22_dof_and_model_owned_object_anchor() -> None:
@@ -370,13 +383,18 @@ def test_real_mujoco_reset_and_step_contract(tmp_path: Path) -> None:
         np.testing.assert_allclose(viewer_models[0].mesh_scale[mesh_ids[0]], [0.0335 * 0.8] * 3)
         np.testing.assert_allclose(viewer_models[1].mesh_scale[mesh_ids[1]], [0.0335] * 3)
         state = env.init_state()
-        assert state.obs["obs"].shape == (2, 108)
-        assert state.obs["critic"].shape == (2, 117)
-        assert state.info["proprio_hist"].shape == (2, 30, 36)
+        assert state.obs["obs"].shape == (2, 96)
+        assert state.obs["critic"].shape == (2, 105)
+        assert state.info["proprio_hist"].shape == (2, 30, 32)
         assert state.info["critic_info"].shape == (2, 9)
+        assert np.isfinite(state.obs["obs"]).all()
+        assert np.isfinite(state.obs["critic"]).all()
+        assert np.isfinite(state.info["proprio_hist"]).all()
+        assert np.isfinite(state.info["critic_info"]).all()
         state = env.step(np.zeros((2, 16), dtype=np.float32))
         assert np.isfinite(state.obs["obs"]).all()
         assert np.isfinite(state.obs["critic"]).all()
+        assert np.isfinite(state.info["proprio_hist"]).all()
         assert np.isfinite(state.reward).all()
         assert set(state.info["log"]) >= {
             "diagnostic/contact_ratio/index",

@@ -29,6 +29,7 @@ from unilab.envs.manipulation.sharpa_inhand.rotation import (
 
 from .ball_rotation_0730 import _CACHE_GENERATION_NOMINAL_HAND_QPOS
 from .base import MENAGERIE_SIM_JOINT_NAMES
+from .hora_appo_deploy_contract import build_deploy_contract_manifest
 
 LEAP_TACTILE_FORCE_SENSOR_NAMES: tuple[str, ...] = (
     "leap_index_tactile_force",
@@ -66,9 +67,9 @@ class LeapInhandBall0730HoraAppoRotationCfg(SharpaInhandRotationCfg):
     max_episode_seconds: float = 20.0
 
     action_space: int = 16
-    observation_space: int = 108
+    observation_space: int = 96
     num_hand_dofs: int = 16
-    frame_obs_dim: int = 36
+    frame_obs_dim: int = 32
     obs_lag_steps: int = 3
     obs_history_len: int = 80
     prop_hist_len: int = 30
@@ -105,7 +106,10 @@ class LeapInhandBall0730HoraAppoRotationCfg(SharpaInhandRotationCfg):
     obs: SharpaObservationConfig = field(
         default_factory=lambda: SharpaObservationConfig(
             observation_mode="separated",
-            enable_tactile=True,
+            # Tactile force sensors are simulation-only diagnostics for this
+            # LEAP embodiment. They are intentionally excluded from the
+            # deployable HORA actor/proprio observation contract.
+            enable_tactile=False,
             binary_contact=False,
             enable_contact_pos=False,
             contact_smooth=0.5,
@@ -231,7 +235,17 @@ class LeapInhandBall0730HoraAppoRotationEnv(SharpaInhandRotationEnv):
         # This also makes an incomplete scale set fail before training starts.
         self._grasp_cache = dr_provider._load_grasp_cache(self)
 
+    def build_deploy_contract_manifest(self) -> dict[str, Any]:
+        """Export no-tactile policy metadata from the materialized model contract."""
+
+        return build_deploy_contract_manifest(
+            joint_names=self._cfg.actuated_joint_names,
+            joint_lower=self._ctrl_lower,
+            joint_upper=self._ctrl_upper,
+        )
+
     def _read_tactile_force(self) -> np.ndarray:
+        """Read simulation-only tactile diagnostics, never policy inputs."""
         sensor_names = tuple(self._cfg.sensor.tactile_force_sensor_names)
         if len(sensor_names) != self._num_tactile:
             raise ValueError(

@@ -108,3 +108,4 @@ src/unilab/assets/robots/**/tmp*.xml
 *.webm
 node_modules/
 **/node_modules/
+.pytest-tmp-*/

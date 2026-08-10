@@ -113,7 +113,9 @@ env:
   disable_tactile_ids: []
   obs:
     observation_mode: separated
-    enable_tactile: true
+    # Simulation tactile remains available for diagnostics/contact logging, but
+    # is intentionally excluded from the deployable HORA policy observation.
+    enable_tactile: false
     binary_contact: false
     enable_contact_pos: false
     contact_smooth: 0.5
